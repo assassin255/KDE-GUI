@@ -14,6 +14,26 @@ err() { log "ERR " "$1"; exit 1; }
 
 require_root() { [[ "$(id -u)" -eq 0 ]] || err "Chay bang root."; }
 
+# Cai cac goi trong danh sach, tu dong bo qua goi khong co trong repo
+# (khac nhau giua cac distro/moi truong: CodeSandbox, Colab, v.v.)
+apt_install() {
+    local pkg avail=() skipped=()
+    for pkg in "$@"; do
+        if apt-cache show "$pkg" >/dev/null 2>&1; then
+            avail+=("$pkg")
+        else
+            skipped+=("$pkg")
+        fi
+    done
+    if [[ ${#skipped[@]} -gt 0 ]]; then
+        info "Bo qua goi khong co trong repo: ${skipped[*]}"
+    fi
+    if [[ ${#avail[@]} -gt 0 ]]; then
+        DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${avail[@]}" >> "$INSTLOG" 2>&1 || \
+            info "Mot vai goi cai loi (xem $INSTLOG), tiep tuc..."
+    fi
+}
+
 install() {
     require_root
     source /etc/os-release 2>/dev/null || err "Khong ho tro distro."
@@ -26,29 +46,31 @@ install() {
     chown -R $USER:$USER /home/$USER/.vnc
 
     apt-get update -y > /tmp/desktop-kasm-install.log 2>&1 || true
-    info "Cai KDE..."
     INSTLOG="/tmp/desktop-kasm-install.log"
-    if ! DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        plasma-desktop kwin-x11 xorg xserver-xorg-core xserver-xorg-input-libinput \
+
+    info "Cai KDE (cot loi)..."
+    apt_install plasma-desktop kwin-x11 xorg xserver-xorg-core xserver-xorg-input-libinput \
         xinit dbus-x11 breeze breeze-cursor-theme gtk2-engines-pixbuf \
-        qgnomeplatform-qt5 libgl1-mesa-dri libegl-mesa0 libglx-mesa0 mesa-utils ssl-cert openssl expect \
-        > "$INSTLOG" 2>&1; then
+        libgl1-mesa-dri libegl-mesa0 libglx-mesa0 mesa-utils ssl-cert openssl expect
+
+    if ! command -v startplasma-x11 >/dev/null 2>&1; then
         echo ""
         echo "----- $INSTLOG (50 dong cuoi) -----"
         tail -50 "$INSTLOG"
         echo "-----------------------------------"
-        err "Cai goi KDE that bai. Xem log tren de biet nguyen nhan."
+        err "Cai KDE that bai (khong thay startplasma-x11). Xem log tren de biet nguyen nhan."
     fi
 
+    info "Cai them goi khong bat buoc (theme GNOME, v.v.)..."
+    apt_install qgnomeplatform-qt5 qgnomeplatform-qt6 adwaita-qt
+
     info "Cai them QML modules cho Application Launcher..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        qml-module-org-kde-kirigami2 plasma-framework \
+    apt_install qml-module-org-kde-kirigami2 plasma-framework \
         qml-module-org-kde-kquickcontrolsaddons qml-module-org-kde-kcoreaddons \
         qml-module-org-kde-kitemmodels qml-module-qt-labs-platform \
         qml-module-qtquick-controls qml-module-qtquick-controls2 \
         qml-module-qtquick-layouts qml-module-qtgraphicaleffects \
-        qml-module-qtquick-window2 plasma-workspace plasma-pa >> "$INSTLOG" 2>&1 || \
-        info "Mot so goi QML khong co san, bo qua."
+        qml-module-qtquick-window2 plasma-workspace plasma-pa
 
     info "Cai Google Chrome..."
     if [[ "$ARCH" == "amd64" ]]; then
